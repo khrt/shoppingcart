@@ -1,0 +1,767 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">shoppingcart/cart.go (69.4%)</option>
+				
+				<option value="file1">shoppingcart/http.go (43.5%)</option>
+				
+				<option value="file2">shoppingcart/main.go (0.0%)</option>
+				
+				<option value="file3">shoppingcart/storage.go (76.8%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "context"
+        "database/sql"
+        "fmt"
+        "time"
+)
+
+// Cart is a shopping cart of a user, holds theirs line items.
+type Cart struct {
+        ID        int64
+        UserID    int64
+        LineItems []*LineItem
+        CreatedAt time.Time
+        UpdatedAt time.Time
+}
+
+// LineItem is an SKU item of a cart with a quantity multiplier.
+type LineItem struct {
+        ID        int64
+        CartID    int64
+        ProductID int64
+        Quantity  int64
+        CreatedAt time.Time
+        UpdatedAt time.Time
+}
+
+// storer describes Shopping Cart storage functions.
+type storer interface {
+        BeginTx(ctx context.Context, opts *sql.TxOptions) (storer, error) // NOTE: an interesting point to discuss
+        Commit() error
+
+        CartCreate(ctx context.Context, cart *Cart) error
+        CartWithItemsByCartID(ctx context.Context, cartID int64) (*Cart, error)
+        CartEmpty(ctx context.Context, cartID int64) error
+
+        LineItemsUpsert(ctx context.Context, cartID int64, items ...*LineItem) error
+        LineItemRemove(ctx context.Context, cartID, itemID int64) error
+}
+
+// ShoppingCart holds business logic.
+type ShoppingCart struct {
+        storage storer
+}
+
+// CartCreate creates and persists a shopping cart, returns created cart with items if were any.
+func (sc *ShoppingCart) CartCreate(ctx context.Context, userID int64, items []*LineItem) (*Cart, error) <span class="cov8" title="1">{
+        cart := &amp;Cart{
+                UserID:    userID,
+                LineItems: items,
+        }
+
+        ctx, cancel := context.WithCancel(ctx)
+        defer cancel()
+
+        var (
+                tx  storer
+                err error
+        )
+        tx, err = sc.storage.BeginTx(ctx, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("tx: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := tx.CartCreate(ctx, cart); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("cart: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := tx.LineItemsUpsert(ctx, cart.ID, items...); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("items: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := tx.Commit(); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("commit: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return cart, nil</span>
+}
+
+// CartShow returns the details of a cart.
+func (sc *ShoppingCart) CartShow(ctx context.Context, cartID int64) (*Cart, error) <span class="cov0" title="0">{
+        return sc.storage.CartWithItemsByCartID(ctx, cartID)
+}</span>
+
+// CartEmpty empties a shopping cart.
+func (sc *ShoppingCart) CartEmpty(ctx context.Context, cartID int64) error <span class="cov0" title="0">{
+        return sc.storage.CartEmpty(ctx, cartID)
+}</span>
+
+// LineItemAdd adds products to a shopping cart, returns items added.
+func (sc *ShoppingCart) LineItemAdd(ctx context.Context, cartID int64, items []*LineItem) ([]*LineItem, error) <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(ctx)
+        defer cancel()
+
+        var (
+                tx  storer
+                err error
+        )
+        tx, err = sc.storage.BeginTx(ctx, &amp;sql.TxOptions{ReadOnly: true})
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("tx: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">cart, err := tx.CartWithItemsByCartID(ctx, cartID)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("cart: %w", err)
+        }</span>
+
+        // Sum quantity of existing products.
+        <span class="cov8" title="1">for _, item := range items </span><span class="cov8" title="1">{
+                for _, i := range cart.LineItems </span><span class="cov8" title="1">{
+                        if i.ProductID == item.ProductID </span><span class="cov8" title="1">{
+                                item.ID = i.ID
+                                item.Quantity += i.Quantity
+                        }</span>
+                }
+        }
+
+        <span class="cov8" title="1">if err := tx.LineItemsUpsert(ctx, cartID, items...); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("items: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">if err := tx.Commit(); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("commit: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return items, nil</span>
+}
+
+// LineItemRemove removes products from a shopping cart.
+func (sc *ShoppingCart) LineItemRemove(ctx context.Context, cartID, itemID int64) error <span class="cov0" title="0">{
+        return sc.storage.LineItemRemove(ctx, cartID, itemID)
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package main
+
+import (
+        "context"
+        "database/sql"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "log"
+        "net/http"
+        "strconv"
+
+        "github.com/go-chi/chi"
+)
+
+type apiv1Cart struct {
+        ID        int64           `json:"id"`
+        UserID    int64           `json:"user_id"`
+        LineItems []apiv1LineItem `json:"line_items,omitempty"`
+}
+
+type apiv1LineItem struct {
+        ID        int64 `json:"id"`
+        CartID    int64 `json:"cart_id"`
+        ProductID int64 `json:"product_id"`
+        Quantity  int64 `json:"quantity"`
+}
+
+type service interface {
+        CartCreate(ctx context.Context, userID int64, items []*LineItem) (*Cart, error)
+        CartShow(ctx context.Context, cartID int64) (*Cart, error)
+        CartEmpty(ctx context.Context, cartID int64) error
+        LineItemAdd(ctx context.Context, cartID int64, items []*LineItem) ([]*LineItem, error)
+        LineItemRemove(ctx context.Context, cartID, itemID int64) error
+}
+
+// APIv1 describes Shopping Cart REST API v1.
+type APIv1 struct {
+        service service
+}
+
+// NewAPIv1 instantiates APIv1.
+func NewAPIv1(srv service) *chi.Mux <span class="cov0" title="0">{
+        h := APIv1{service: srv}
+
+        r := chi.NewRouter()
+
+        r.Use(APIv1AuthMiddleware(nil))
+
+        r.Post("/v1/cart", h.CartCreate)
+        r.Get("/v1/cart/{cartID}", h.CartShow)
+        r.Delete("/v1/cart/{cartID}", h.CartEmpty)
+
+        r.Put("/v1/cart/{cartID}/item", h.LineItemAdd)
+        r.Delete("/v1/cart/{cartID}/item/{itemID}", h.LineItemRemove)
+
+        return r
+}</span>
+
+// CartCreate creates and persists a shopping cart.
+func (h *APIv1) CartCreate(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        var c apiv1Cart
+        if err := json.NewDecoder(r.Body).Decode(&amp;c); err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "json: %s", err)
+                return
+        }</span> else<span class="cov8" title="1"> if c.UserID == 0 </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "user ID required")
+                return
+        }</span>
+
+        <span class="cov8" title="1">cart, err := h.service.CartCreate(r.Context(), c.UserID, h.fromAPIv1LineItem(c.LineItems))
+        switch </span>{
+        case r.Context().Err() != nil:<span class="cov8" title="1">
+                w.WriteHeader(http.StatusRequestTimeout)
+                return</span>
+        case err != nil:<span class="cov0" title="0">
+                log.Printf("CartCreate(%+v): %s", c, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return</span>
+        }
+
+        <span class="cov8" title="1">w.WriteHeader(http.StatusCreated)
+        if err := json.NewEncoder(w).Encode(h.toAPIv1Cart(cart)); err != nil </span><span class="cov0" title="0">{
+                log.Printf("CartCreate Encode(%+v): %s", cart, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return
+        }</span>
+
+        <span class="cov8" title="1">return</span>
+}
+
+// CartShow returns the details of a cart.
+func (h *APIv1) CartShow(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        cartID, err := h.parseInt(chi.URLParam(r, "cartID"))
+        if err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "cartID: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">cart, err := h.service.CartShow(r.Context(), cartID)
+        switch </span>{
+        case r.Context().Err() != nil:<span class="cov0" title="0">
+                w.WriteHeader(http.StatusRequestTimeout)
+                return</span>
+        case errors.Is(err, sql.ErrNoRows):<span class="cov8" title="1">
+                w.WriteHeader(http.StatusNotFound)
+                return</span>
+        case err != nil:<span class="cov8" title="1">
+                log.Printf("CartShow(%d): %s", cartID, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return</span>
+        }
+
+        <span class="cov8" title="1">if err := json.NewEncoder(w).Encode(h.toAPIv1Cart(cart)); err != nil </span><span class="cov0" title="0">{
+                log.Printf("CartShow Encode(%+v): %s", cart, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return
+        }</span>
+
+        <span class="cov8" title="1">return</span>
+}
+
+// CartEmpty empties a shopping cart.
+// NOTE: Empties only the cart's items, does not delete the cart itself.
+func (h *APIv1) CartEmpty(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        cartID, err := h.parseInt(chi.URLParam(r, "cartID"))
+        if err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "cartID: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">err = h.service.CartEmpty(r.Context(), cartID)
+        switch </span>{
+        case r.Context().Err() != nil:<span class="cov0" title="0">
+                w.WriteHeader(http.StatusRequestTimeout)
+                return</span>
+        case err != nil:<span class="cov0" title="0">
+                log.Printf("CartEmpty(%d): %s", cartID, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return</span>
+        }
+
+        <span class="cov8" title="1">w.WriteHeader(http.StatusNoContent)
+        return</span>
+}
+
+// LineItemAdd adds products to a shopping cart.
+func (h *APIv1) LineItemAdd(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        cartID, err := h.parseInt(chi.URLParam(r, "cartID"))
+        if err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "cartID: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">var ii []apiv1LineItem
+        if err := json.NewDecoder(r.Body).Decode(&amp;ii); err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "json: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">items, err := h.service.LineItemAdd(r.Context(), cartID, h.fromAPIv1LineItem(ii))
+        switch </span>{
+        case r.Context().Err() != nil:<span class="cov0" title="0">
+                w.WriteHeader(http.StatusRequestTimeout)
+                return</span>
+        case errors.Is(err, sql.ErrNoRows):<span class="cov0" title="0">
+                w.WriteHeader(http.StatusNotFound)
+                fmt.Fprintf(w, "cart does not exist")
+                return</span>
+        case err != nil:<span class="cov0" title="0">
+                log.Printf("LineItemAdd(%d, %+v): %s", cartID, ii, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return</span>
+        }
+
+        <span class="cov8" title="1">w.WriteHeader(http.StatusCreated)
+        if err := json.NewEncoder(w).Encode(h.toAPIv1LineItem(items)); err != nil </span><span class="cov0" title="0">{
+                log.Printf("LineItemAdd Encode(%+v): %s", items, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return
+        }</span>
+
+        <span class="cov8" title="1">return</span>
+}
+
+// LineItemRemove removes products from a shopping cart.
+func (h *APIv1) LineItemRemove(w http.ResponseWriter, r *http.Request) <span class="cov8" title="1">{
+        cartID, err := h.parseInt(chi.URLParam(r, "cartID"))
+        if err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "cartID: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">itemID, err := h.parseInt(chi.URLParam(r, "itemID"))
+        if err != nil </span><span class="cov0" title="0">{
+                w.WriteHeader(http.StatusBadRequest)
+                fmt.Fprintf(w, "itemID: %s", err)
+                return
+        }</span>
+
+        <span class="cov8" title="1">err = h.service.LineItemRemove(r.Context(), cartID, itemID)
+        switch </span>{
+        case r.Context().Err() != nil:<span class="cov0" title="0">
+                w.WriteHeader(http.StatusRequestTimeout)
+                return</span>
+        case errors.Is(err, sql.ErrNoRows):<span class="cov0" title="0"></span>
+                // Being idempotent.
+                // Ignoring Cart doesn't exist error assuming the item doesn't exist as well.
+        case err != nil:<span class="cov0" title="0">
+                log.Printf("LineItemRemove(%d, %d): %s", cartID, itemID, err)
+                w.WriteHeader(http.StatusInternalServerError)
+                return</span>
+        }
+
+        <span class="cov8" title="1">w.WriteHeader(http.StatusNoContent)
+        return</span>
+}
+
+func (h *APIv1) fromAPIv1LineItem(ii []apiv1LineItem) []*LineItem <span class="cov8" title="1">{
+        items := make([]*LineItem, len(ii))
+        for j, i := range ii </span><span class="cov8" title="1">{
+                items[j] = &amp;LineItem{
+                        ProductID: i.ProductID,
+                        Quantity:  i.Quantity,
+                }
+        }</span>
+        <span class="cov8" title="1">return items</span>
+}
+
+func (h *APIv1) toAPIv1Cart(cart *Cart) apiv1Cart <span class="cov8" title="1">{
+        c := apiv1Cart{
+                ID:     cart.ID,
+                UserID: cart.UserID,
+        }
+        if len(cart.LineItems) &gt; 0 </span><span class="cov8" title="1">{
+                c.LineItems = h.toAPIv1LineItem(cart.LineItems)
+        }</span>
+        <span class="cov8" title="1">return c</span>
+}
+
+func (h *APIv1) toAPIv1LineItem(items []*LineItem) []apiv1LineItem <span class="cov8" title="1">{
+        ii := make([]apiv1LineItem, len(items))
+        for j, item := range items </span><span class="cov8" title="1">{
+                ii[j] = apiv1LineItem{
+                        ID:        item.ID,
+                        CartID:    item.CartID,
+                        ProductID: item.ProductID,
+                        Quantity:  item.Quantity,
+                }
+        }</span>
+        <span class="cov8" title="1">return ii</span>
+}
+
+func (h *APIv1) parseInt(s string) (int64, error) <span class="cov8" title="1">{
+        i, err := strconv.ParseInt(s, 10, 64)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("%q: %w", s, err)
+        }</span> else<span class="cov8" title="1"> if i == 0 </span><span class="cov0" title="0">{
+                return 0, errors.New("invalid value")
+        }</span>
+        <span class="cov8" title="1">return i, nil</span>
+}
+
+// Context Auth constants.
+type ctxAuthKey uint8
+
+const ctxAuth ctxAuthKey = 0
+
+// APIv1AuthMiddleware returns an authentication middleware which auth users over auth service.
+func APIv1AuthMiddleware(authsrv interface{}) func(next http.Handler) http.Handler <span class="cov0" title="0">{
+        return func(next http.Handler) http.Handler </span><span class="cov0" title="0">{
+                return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov0" title="0">{
+                        user, pass, ok := r.BasicAuth() // NOTE: let's pretend it's a token
+                        if !ok </span><span class="cov0" title="0">{
+                                w.WriteHeader(http.StatusUnauthorized)
+                                return
+                        }</span>
+
+                        // NOTE: sending _the token_ to the imaginary authsrv service.
+                        <span class="cov0" title="0">if user != "Aladdin" || pass != "OpenSesame" </span><span class="cov0" title="0">{
+                                w.WriteHeader(http.StatusForbidden)
+                                return
+                        }</span>
+
+                        // NOTE: adding auth info the request's context.
+                        <span class="cov0" title="0">ctx := context.WithValue(r.Context(), ctxAuth, "info")
+                        next.ServeHTTP(w, r.WithContext(ctx))</span>
+                })
+        }
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package main
+
+import (
+        "context"
+        "database/sql"
+        "flag"
+        "log"
+        "net/http"
+        "os"
+        "os/signal"
+
+        _ "github.com/mattn/go-sqlite3"
+)
+
+func main() <span class="cov0" title="0">{
+        var (
+                dsn  = flag.String("dsn", "file:./testdata/db.sqlite3?cache=shared&amp;_loc=UTC&amp;mode=rw", "DSN")
+                addr = flag.String("addr", ":5000", "Address to bind HTTP server")
+        )
+        flag.Parse()
+
+        db, err := sql.Open("sqlite3", *dsn)
+        if err != nil </span><span class="cov0" title="0">{
+                log.Fatal("db:", db)
+        }</span>
+
+        <span class="cov0" title="0">st := &amp;SQLite3{db: db}
+        sc := &amp;ShoppingCart{storage: st}
+
+        s := &amp;http.Server{
+                Addr:    *addr,
+                Handler: NewAPIv1(sc),
+        }
+
+        idleConnsClosed := make(chan struct{})
+        go func() </span><span class="cov0" title="0">{
+                sigint := make(chan os.Signal, 1)
+                signal.Notify(sigint, os.Interrupt)
+                &lt;-sigint
+
+                // We received an interrupt signal, shut down.
+                if err := s.Shutdown(context.Background()); err != nil </span><span class="cov0" title="0">{
+                        // Error from closing listeners, or context timeout:
+                        log.Println("http shutdown:", err)
+                }</span>
+                <span class="cov0" title="0">close(idleConnsClosed)</span>
+        }()
+
+        <span class="cov0" title="0">log.Printf("Listening on %s...", *addr)
+        if err := s.ListenAndServe(); err != http.ErrServerClosed </span><span class="cov0" title="0">{
+                log.Fatal("http:", err)
+        }</span>
+
+        <span class="cov0" title="0">&lt;-idleConnsClosed</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package main
+
+import (
+        "context"
+        "database/sql"
+        "errors"
+        "fmt"
+        "time"
+)
+
+type db interface {
+        QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+        QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+        ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
+// SQLite3 holds functions to mutate objects state in the DB.
+type SQLite3 struct {
+        db db
+}
+
+func (s *SQLite3) BeginTx(ctx context.Context, opts *sql.TxOptions) (storer, error) <span class="cov8" title="1">{ // NOTE: consequence of storer
+        db, ok := s.db.(*sql.DB)
+        if !ok </span><span class="cov8" title="1">{
+                return nil, errors.New("can not begin transaction while in a transaction")
+        }</span>
+
+        <span class="cov8" title="1">tx, err := db.BeginTx(ctx, opts)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">return &amp;SQLite3{db: tx}, nil</span>
+}
+
+func (s *SQLite3) Commit() error <span class="cov0" title="0">{
+        tx, ok := s.db.(*sql.Tx)
+        if !ok </span><span class="cov0" title="0">{
+                return errors.New("not a transaction")
+        }</span>
+        <span class="cov0" title="0">return tx.Commit()</span>
+}
+
+func (s *SQLite3) CartCreate(ctx context.Context, cart *Cart) error <span class="cov8" title="1">{
+        tm := time.Now().UTC()
+
+        res, err := s.db.ExecContext(
+                ctx,
+                `INSERT INTO carts(user_id, created_at, updated_at) VALUES(?, ?, ?)`,
+                cart.UserID, tm, tm,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">if cart.ID, err = res.LastInsertId(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">cart.CreatedAt, cart.UpdatedAt = tm, tm
+        return nil</span>
+}
+
+func (s *SQLite3) CartWithItemsByCartID(ctx context.Context, cartID int64) (*Cart, error) <span class="cov8" title="1">{
+        c := &amp;Cart{}
+        err := s.db.QueryRowContext(
+                ctx,
+                `SELECT user_id, created_at, updated_at
+                FROM carts
+                WHERE id = ?`,
+                cartID,
+        ).Scan(
+                &amp;c.UserID,
+                &amp;c.CreatedAt,
+                &amp;c.UpdatedAt,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("cart query: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">c.ID = cartID
+
+        var ii []*LineItem
+        rows, err := s.db.QueryContext(
+                ctx,
+                `SELECT id, product_id, quantity, created_at, updated_at
+                FROM line_items
+                WHERE cart_id = ?`,
+                cartID,
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("item query: %w", err)
+        }</span>
+        <span class="cov8" title="1">defer rows.Close()
+
+        for rows.Next() </span><span class="cov8" title="1">{
+                i := &amp;LineItem{}
+                err := rows.Scan(
+                        &amp;i.ID,
+                        &amp;i.ProductID,
+                        &amp;i.Quantity,
+                        &amp;i.CreatedAt,
+                        &amp;i.UpdatedAt,
+                )
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("item scan: %w", err)
+                }</span>
+
+                <span class="cov8" title="1">i.CartID = cartID
+                ii = append(ii, i)</span>
+        }
+
+        <span class="cov8" title="1">c.LineItems = ii
+        return c, nil</span>
+}
+
+func (s *SQLite3) CartEmpty(ctx context.Context, cartID int64) error <span class="cov8" title="1">{
+        _, err := s.db.ExecContext(
+                ctx,
+                `DELETE FROM line_items WHERE cart_id = ?`,
+                cartID,
+        )
+        return err
+}</span>
+
+func (s *SQLite3) LineItemsUpsert(ctx context.Context, cartID int64, items ...*LineItem) error <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(ctx)
+        defer cancel()
+
+        for _, item := range items </span><span class="cov8" title="1">{
+                if item == nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">tm := time.Now().UTC()
+
+                res, err := s.db.ExecContext(
+                        ctx,
+                        `INSERT INTO line_items(cart_id, product_id, quantity, created_at, updated_at)
+                        VALUES(?, ?, ?, ?, ?)
+                        ON CONFLICT(cart_id, product_id) DO UPDATE SET quantity = ?, updated_at = ?`,
+                        cartID, item.ProductID, item.Quantity, tm, tm,
+                        item.Quantity, tm,
+                )
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("exec %d: %w", item.ProductID, err)
+                }</span>
+
+                <span class="cov8" title="1">item.UpdatedAt = time.Now().UTC()
+
+                if item.ID, err = res.LastInsertId(); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("id %d: %w", item.ProductID, err)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (s *SQLite3) LineItemRemove(ctx context.Context, cartID, itemID int64) error <span class="cov8" title="1">{
+        fmt.Println(cartID, itemID)
+        _, err := s.db.ExecContext(
+                ctx,
+                `DELETE FROM line_items WHERE cart_id = ? AND id = ?`,
+                cartID, itemID,
+        )
+        return err
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
